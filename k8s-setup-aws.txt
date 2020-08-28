@@ -1,0 +1,216 @@
+Setup Kubernetes (K8s) Cluster on AWS
+_________________________________________
+1)Create Ubuntu EC2 instance
+inbound rule:
+  https  tcp  443     anywhere
+  ssh    tcp   22      "
+customtcp tcp 8080	"
+http	 tcp  80      "
+2) become an rooot
+_____________________________
+ sudo su -
+
+3)install AWSCLI
+_________________
+ $curl https://s3.amazonaws.com/aws-cli/awscli-bundle.zip -o awscli-bundle.zip
+
+ $apt install unzip python
+
+ $unzip awscli-bundle.zip
+
+ #sudo apt-get install unzip - if you dont have unzip in your system
+ $ ./awscli-bundle/install -i /usr/local/aws -b /usr/local/bin/aws
+
+4)check the aws cli version:
+_____________________________
+$aws --version
+
+
+Install kubectl
+_____________________
+curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+ chmod +x ./kubectl
+ sudo mv ./kubectl /usr/local/bin/kubectl
+
+To check that kubectl is installed
+__________________________________
+ $ kubectl version --client. 
+
+Create an IAM user/role with Route53, EC2, IAM and S3 full access
+___________________________________________________________________
+ec2--role--create role-next permisssion--select iam fullaccess,s3fullaccess,route53,ec2fullaccess-
+click on addtags--Name,value:k8s-role-click on review--enter rolename as k8s-role--clickon createrole
+
+Attach IAM role to ubuntu server
+_________________________________
+select running ec2--instance--aactions---instance settings--attach/replace IAM ROLE--select
+our newly create role "k8s-rol"--apply
+
+
+chek any buckets with :
+_____________________
+$aws s3 ls
+Note: If you create IAM user with programmatic access then provide Access keys.
+
+
+  $aws configure
+  dont enter access-key and secret access-key  and region as us-east-2[ohio]
+
+Install kops on ubuntu instance:
+_____________________________
+
+ curl -LO https://github.com/kubernetes/kops/releases/download/$(curl -s https://api.github.com/repos/kubernetes/kops/releases/latest | grep tag_name | cut -d '"' -f 4)/kops-linux-amd64
+ chmod +x kops-linux-amd64
+ sudo mv kops-linux-amd64 /usr/local/bin/kops
+
+Create a Route53 private hosted zone (you can create Public hosted zone if you have a domain)
+_____________________________________________________________________________________________
+
+services--Networking & Content Delivery-route53-route53 dashboard--DNS Management-cratehostedzone-
+Create hosted zoneInfo,Hosted zone configuration--enter domain name,selct privatehostedzone-selct
+ohio region,selct defaultvpc id---click on "create hostedzone"
+devopsdummy.in
+
+create an S3 bucket
+______________________
+
+ aws s3 mb s3://dev.k8s.devopsdummy.in
+
+Expose environment variable:
+________________________________
+
+ export KOPS_STATE_STORE=s3://dev.k8s.devopsdummy.in
+
+Create sshkeys before creating cluster:
+_______________________________________-
+
+ ssh-keygen
+
+Create kubernetes cluster definitions on S3 bucket
+__________________________________________________
+
+
+ $kops create cluster --cloud=aws --zones=us-east-2a --name=dev.k8s.devopsdummy.in --dns-zone=devopsdummy.in --dns private
+
+note:here sriniinfo.in is the hostedzone name in the route53:
+
+get the cluster info:
+_______________________
+$ kops get cluster
+
+Create kubernetes cluser
+______________________________
+
+excute the commands with yes and without yes
+
+  $kops update cluster dev.k8s.devopsdummy.in --yes
+  $kops update cluster dev.k8s.sriniinfo.in --yes
+Validate your cluster
+___________________________
+
+ kops validate cluster
+==========================================================================================
+issue:
+Validation failed: unexpected error during validation: unable to resolve Kubernetes cluster API URL dns: lookup api.dev.k8s.devopsdummy.in on 127.0.0.53:53: no such host
+
+solution: restart or delte the cluster 
+$kops rolling-update cluster
+====================================================================================
+
+checking the status of controlplane componenets:
+__________________________________________________
+$kubectl get componentstatuses
+
+To list nodes
+________________
+
+  $kubectl get nodes 
+
+Deploying Nginx container on Kubernetes
+________________________________________
+Deploying Nginx Container:
+____________________________
+
+  kubectl run samplebusybox --image=busybox --replicas=2 --port=80
+  kubectl get pods
+
+==========================================================================================
+  kubectl get deployments
+
+Expose the deployment as service. This will create an ELB in front of those 2 containers and allow us to publicly access them:
+
+ kubectl expose deployment sample-nginx --port=80 --type=LoadBalancer
+ kubectl get services -o wide
+=======================================================================================
+To delete cluster:
+_____________________
+
+ kops delete cluster dev.k8s.devopsdummy.in --yes
+=========================================================================================
+https://kubernetes.io/docs/reference/kubectl/overview/
+
+get info on available commands in kubectl:
+____________________________________________
+$kubectl help
+
+displaying cluster-info:
+__________________________
+$kubectl cluster-info
+
+
+Information regarding cluster for debugging and diagnosis.
+__________________________________________________________
+
+$kubectl cluster-info dump
+$kubectl cluster-info dump --output-directory = /path/to/cluster-state
+
+to know the kubernetes-apiversion:
+_________________________________
+
+$kubectl api-versions
+
+note:kubectl command line tool lets you control Kubernetes clusters
+
+
+what is kubeconfig file:
+______________________________
+
+>A file that is used to configure access to a cluster is sometimes called a kubeconfig file. This is a generic way of referring to configuration files. 
+>It does not mean that there is a file named kubeconfig.
+
+>use how to configure access to multiple clusters by using configuration files.
+>After your clusters, users, and contexts are defined in one or more configuration files, you can  quickly switch between clusters by using the "kubectl config use-context" command.
+
+$kubectl config view
+how to view the current context of kubeconfig:
+________________________________________________
+$kubectl config current-context
+
+kubectl config delete-cluster − Deletes the specified cluster from kubeconfig.
+____________________________________________________________________________
+
+$ kubectl config delete-cluster <Cluster Name>
+
+kubectl config delete-context − Deletes a specified context from kubeconfig.
+____________________________________________________________________________
+
+$ kubectl config delete-context <Context Name>
+
+kubectl config get-clusters − Displays cluster defined in the kubeconfig.
+_________________________________________________________________________
+$kubectl config get-clusters
+
+kubectl config get-contexts − Describes one or many contexts.
+____________________________________________________________
+$ kubectl config get-contexts <Context Name>
+
+$kubectl config get-contexts dev.k8s.devopsdummy.in
+
+
+-------------------------------------------------------
+cluster------nodes----pods-containers
+kops get cluster
+kubectl get nodes
+kubectl get pods
+
+
